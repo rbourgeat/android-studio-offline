@@ -1,57 +1,41 @@
-FROM ubuntu:22.04
+FROM node:18.12.1
 
-# Install dependencies
-RUN dpkg --add-architecture i386
-RUN apt-get update && apt-get install -y \
-        build-essential git neovim wget unzip sudo \
-        libc6:i386 libncurses5:i386 libstdc++6:i386 lib32z1 libbz2-1.0:i386 \
-        libxrender1 libxtst6 libxi6 libfreetype6 libxft2 xz-utils vim\
-        qemu qemu-kvm libvirt-bin ubuntu-vm-builder bridge-utils libnotify4 libglu1 libqt5widgets5 openjdk-8-jdk openjdk-11-jdk xvfb \
-        && \
-    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-# Create User
-ARG USER=rbourgeat
-RUN groupadd -g 1000 -r $USER
-RUN useradd -u 1000 -g 1000 --create-home -r $USER
-RUN adduser $USER libvirt
-RUN adduser $USER kvm
-# Remove password
-RUN echo "$USER:$USER" | chpasswd
-RUN echo "${USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-$USER
-RUN usermod -aG sudo $USER
-RUN usermod -aG plugdev $USER
+RUN     apt-get update
+# RUN   apt update
 
-VOLUME /androidstudio-data
-RUN chown $USER:$USER /androidstudio-data
+# Download specific Android Studio
+COPY    files/android-studio-2022.1.1.21-linux.tar.gz .
+RUN     tar -xvf android-studio-2022.1.1.21-linux.tar.gz
+RUN     rm android-studio-2022.1.1.21-linux.tar.gz
+RUN     mv android-studio /opt
 
-COPY dockerfiles/entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY dockerfiles/ndkTests.sh /usr/local/bin/ndkTests.sh
-RUN chmod +x /usr/local/bin/*
-COPY dockerfiles/51-android.rules /etc/udev/rules.d/51-android.rules
+# Download Android Studio Sdk (Android 13.0, API 33, etc...)
+RUN     mkdir -p /home/developer/Android
+COPY    files/Sdk.tar /home/developer/Android
+RUN     tar -xvf /home/developer/Android/Sdk.tar
+RUN     rm /home/developer/Android/Sdk.tar
 
-USER $USER
-WORKDIR /home/$USER
+# Install X11
+RUN     apt install -y x11-apps sudo
 
-#Install Flutter
-ARG FLUTTER_URL=https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_1.22.2-stable.tar.xz
-ARG FLUTTER_VERSION=1.22.2
-RUN wget "$FLUTTER_URL" -O flutter.tar.xz
-RUN tar -xvf flutter.tar.xz
-RUN rm flutter.tar.xz
+# Install prerequisites
+RUN     apt-get install -y openjdk-11-jdk lib32z1 libncurses6 libbz2-1.0 libstdc++6
+# RUN   apt install -y openjdk-11-jdk lib32z1 libncurses6 libbz2-1.0 libstdc++6
 
-ARG ANDROID_STUDIO_VERSION=2022.1.1.21
-COPY files/android-studio-2022.1.1.21-linux.tar.gz .
-RUN tar -xvf android-studio-2022.1.1.21-linux.tar.gz
-RUN rm android-studio-2022.1.1.21-linux.tar.gz
-RUN mv android-studio /opt
+# Install other useful tools
+RUN     apt install -y git vim
+# RUN npm install --global yarn@8.19.2
 
-RUN ln -s /studio-data/profile/AndroidStudio$ANDROID_STUDIO_VERSION .AndroidStudio$ANDROID_STUDIO_VERSION
-RUN ln -s /studio-data/Android Android
-RUN ln -s /studio-data/profile/android .android
-RUN ln -s /studio-data/profile/java .java
-RUN ln -s /studio-data/profile/gradle .gradle
-ENV ANDROID_EMULATOR_USE_SYSTEM_LIBS=1
+# Set up permissions for X11 access.
+RUN     export uid=42 gid=42 && \
+        mkdir -p /home/developer && \
+        echo "developer:x:${uid}:${gid}:Developer,,,:/home/developer:/bin/bash" >> /etc/passwd && \
+        echo "developer:x:${uid}:" >> /etc/group && \
+        echo "developer ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/developer && \
+        chmod 0440 /etc/sudoers.d/developer && \
+        chown ${uid}:${gid} -R /home/developer
 
-WORKDIR /home/$USER
+USER    developer
+ENV     HOME /home/developer
 
-ENTRYPOINT [ "/usr/local/bin/entrypoint.sh" ]
+ENTRYPOINT [ "/opt/android-studio/bin/studio.sh" ]
